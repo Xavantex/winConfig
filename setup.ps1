@@ -67,7 +67,7 @@ if (!(Get-Command neovim -errorAction SilentlyContinue))
 # Install latest and "greatest" stable python
 #if (!(Get-Command python -errorAction SilentlyContinue))
 #{
-if (Python --version | -match "Python was not found")
+if (python --version 2>&1 | Select-String -Pattern "Python was not found")
 {
 	winget install --id Python.Python --source winget --accept-source-agreements --accept-package-agreements
 }
