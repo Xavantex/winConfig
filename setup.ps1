@@ -95,6 +95,36 @@ Process
 	# Won't recognize that git is installed otherwise
 	$PSScriptRoot\scripts\Update-Environment.ps1
 
+	# DOCS ARE NOT SAYING GCC is need SO WE, have to add it SNOOOOOOORE.
+	# Install chocolatey because it is a pain to handle mingw, make and other stuff on winget atm
+	if (!(gcm choco -errorAction SilentlyContinue))
+	{
+		[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+		iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+		$PSScriptRoot\scripts\Update-Environment.ps1
+	}
+
+	# DOCS ARE NOT SAYING GCC is need SO WE, have to add it SNOOOOOOORE.
+	if (!(gcm gcc -errorAction SilentlyContinue))
+	{
+		choco install mingw
+		$PSScriptRoot\scripts\Update-Environment.ps1
+	}
+
+	# Good to have clang, but Lunarvim need it as well
+	if (!(gcm clang -errorAction SilentlyContinue))
+	{
+		choco install llvm
+		$PSScriptRoot\scripts\Update-Environment.ps1
+	}
+
+	# Specified just download
+	if (!(gcm make -errorAction SilentlyContinue))
+	{
+		choco install make
+		$PSScriptRoot\scripts\Update-Environment.ps1
+	}
+
 	# Install 7-zip
 	winstall 7zip.7zip
 
@@ -102,8 +132,8 @@ Process
 	#Install LunarVim
 
 	# Install Neovim first
-	# Neovim not above 9.0 on winget, get nightly
-	winstall Neovim.Neovim.Nightly
+	# Neovim is 9.0 on winget
+	winstall Neovim.Neovim
 
 
 	# Install latest and "greatest" stable python
@@ -112,33 +142,73 @@ Process
 	{
 		forcewinstall Python.Python.3.9
 	}
+
+
+	#!!!!!!!!!!!!!NOTE!!!!!!!!!!!!!!!
+	#INSTALLING ON CHOCO, adds to $PATH as well
+	#!!!!!!!!!!!!!NOTE!!!!!!!!!!!!!!!
+	
+	
+	#$noLLVM = (winget list --id LLVM.LLVM -e --source winget | sls -Pattern "No installed package found")
+	#winstall LLVM.LLVM
+	#if ($noLLVM)
+	#{
+	#	[Environment]::SetEnvironmentVariable("Path",
+	#	(gi -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" ).
+	#	GetValue('Path', '', 'DoNotExpandEnvironmentNames') + ";C:\Program Files\LLVM\bin",
+	#	[EnvironmentVariableTarget]::Machine)
+	#}
+	
+	#$noMake = (winget list --id GnuWin32.Make -e --source winget | sls -Pattern "No installed package found")
+	# Install Make
+	#winstall GnuWin32.Make
+	# Adding to path, this will NOT remove any symlink and dynamic items, such as %systemroot% or %NVM_HOME%
+	#if ($noMake)
+	#{
+	#	[Environment]::SetEnvironmentVariable("Path",
+	#	(gi -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" ).
+	#	GetValue('Path', '', 'DoNotExpandEnvironmentNames') + ";C:\Program Files (x86)\GnuWin32\bin",
+	#	[EnvironmentVariableTarget]::Machine)
 	#}
 
-	# Install Make
-	winstall GnuWin32.Make
-	# Adding to path, this will NOT remove any symlink and dynamic items, such as %systemroot% or %NVM_HOME%
-	[Environment]::SetEnvironmentVariable("Path",
-	(gi -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" ).
-	GetValue('Path', '', 'DoNotExpandEnvironmentNames') + ";C:\Program Files (x86)\GnuWin32\bin",
-	[EnvironmentVariableTarget]::Machine)
+
 
 	# Install Rustup, recommended Rust installation
 	# Check what flags to use for most automation
 	winstall Rustlang.Rustup
 
 	# NVM node.js + npm version manager
+	$noNVM = (winget list --id CoreyButler.NVMforWindows -e --source winget | sls -Pattern "No installed package found")
 	winstall CoreyButler.NVMforWindows
-	# Install latest lts at 64 bit
-	nvm install lts 64
-	# Use latest lts at 64 bit
-	nvm use lts 64
+	if ($noNVM)
+	{
+		$PSScriptRoot\scripts\Update-Environment.ps1
+		# Install latest lts at 64 bit
+		nvm install lts 64
+		# Use latest lts at 64 bit
+		nvm use lts 64
+		
+		$PSScriptRoot\scripts\Update-Environment.ps1
+		# Because lunarvim install is broken without this
+		npm i tree-sitter-cli
+	}
 
 
 	# Install Lunarvim config
 	if (!(gcm lvim -errorAction SilentlyContinue))
 	{
 		pwsh -c "`$LV_BRANCH='release-1.3/neovim-0.9'; iwr https://raw.githubusercontent.com/LunarVim/LunarVim/release-1.3/neovim-0.9/utils/installer/install.ps1 -UseBasicParsing | iex"
+		
+		iwr "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.0.1/JetBrainsMono.zip" -OutFile "jetbrains.zip"
+		iwr "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.0.1/Hack.zip" -OutFile "hack.zip"
+		
+		Expand-Archive "jetbrains.zip" $PSScriptRoot\patched-fonts\JetBrainsMono
+		Expand-Archive "hack.zip" $PSScriptRoot\patched-fonts\Hack
+		erase "jetbrains.zip"
+		erase "hack.zip"
+		$PSScriptRoot\scripts\NFInstall.ps1 JetBrainsMono, Hack
 	}
+	# END OF LUNARVIM INSTALL
 	
 
 	# Install steam
@@ -193,8 +263,15 @@ Process
 	winstall Jellyfin.JellyfinMediaPlayer
 	
 	# Install Windows Terminal
+	$noWT = (winget list --id Microsoft.WindowsTerminal -e --source winget | sls -Pattern "No installed package found")
 	winstall Microsoft.WindowsTerminal
-	
+	if ($noWT)
+	{
+		$wtPath = Join-Path (gci $env:LocalAppData\Packages -Directory -Filter "Microsoft.WindowsTerminal*")[0].FullName LocalState
+		cp $PSScriptRoot\wtConf\settings.json $wtPath
+		cp $PSScriptRoot\wtConf\state.json $wtPath
+	}
+
 	# Only download, no reliable way to know if installed already
 	iwr "https://www.microsoft.com/en-us/download/confirmation.aspx?id=102134" -OutFile "$PSScriptRoot\winKeyLayout\MSKLC.exe"
 
