@@ -26,7 +26,7 @@ dynamicparam {
     $ParamAttribute.ParameterSetName = '__AllParameterSets'
     $Attributes.Add($ParamAttribute)
 
-    [string[]]$FontNames = Join-Path (gi $PSScriptRoot).parent.FullName patched-fonts | gci -Directory -Name
+    [string[]]$FontNames = Join-Path (Get-Item $PSScriptRoot).parent.FullName patched-fonts | Get-ChildItem -Directory -Name
     $Attributes.Add([ValidateSet]::new(($FontNames)))
 
     $Parameter = [Management.Automation.RuntimeDefinedParameter]::new('FontName',  [string[]], $Attributes)
@@ -42,10 +42,10 @@ end {
 
     $fontFiles = [Collections.Generic.List[System.IO.FileInfo]]::new()
 
-    Join-Path (gi $PSScriptRoot).parent.FullName patched-fonts | Push-Location
+    Join-Path (Get-Item $PSScriptRoot).parent.FullName patched-fonts | Push-Location
     foreach ($aFontName in $FontName) {
-        gci $aFontName -Filter "*.ttf" -Recurse | Foreach-Object {$fontFiles.Add($_)}
-        gci $aFontName -Filter "*.otf" -Recurse | Foreach-Object {$fontFiles.Add($_)}
+        Get-ChildItem $aFontName -Filter "*.ttf" -Recurse | Foreach-Object {$fontFiles.Add($_)}
+        Get-ChildItem $aFontName -Filter "*.otf" -Recurse | Foreach-Object {$fontFiles.Add($_)}
     }
     Pop-Location
 

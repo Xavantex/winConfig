@@ -14,9 +14,9 @@ Begin
         param($regpath)
         $path = ''
         $values = Get-ItemProperty $regpath
-        $values | Get-Member -MemberType NoteProperty | Select -ExpandProperty Name | `
-            where { $_ -notmatch '^PS' -and $_ -ne 'USERNAME' -and $_ -ne 'PROCESSOR_ARCHITECTURE'} | `
-            foreach {
+        $values | Get-Member -MemberType NoteProperty | Select-Object -ExpandProperty Name | `
+            Where-Object { $_ -notmatch '^PS' -and $_ -ne 'USERNAME' -and $_ -ne 'PROCESSOR_ARCHITECTURE'} | `
+            ForEach-Object {
                 if ($_ -eq 'PATH') {
                     $path = $values.$_
                 } else {

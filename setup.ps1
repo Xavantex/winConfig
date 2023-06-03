@@ -12,12 +12,12 @@ Inspired by config files and reinstallation.
 Begin
 {
 
-	$win10 = (gin).OsName -match 10
+	$win10 = (Get-ComputerInfo).OsName -match 10
 	
 	function winstall
 	{
 		param($tool)
-		if (winget list --id $tool -e --source winget | sls -Pattern "No installed package found")
+		if (winget list --id $tool -e --source winget | Select-String -Pattern "No installed package found")
 		{
 			winget install --id $tool -e --source winget --accept-source-agreements --accept-package-agreements
 		}
@@ -26,11 +26,11 @@ Begin
 	function ctwinstall
 	{
 		param($tool, $dlURL)
-		if (winget list $tool | sls -Pattern "No installed package found")
+		if (winget list $tool | Select-String -Pattern "No installed package found")
 		{
-			iwr $dlURL -OutFile "$tool.exe"
+			Invoke-WebRequest $dlURL -OutFile "$tool.exe"
 			.\$tool.exe
-			erase $tool.exe
+			Remove-Item $tool.exe
 		}
 	}
 	
@@ -45,23 +45,23 @@ Process
 {
 
 	# Download winget if we do not have it
-	if (!(gcm winget -errorAction SilentlyContinue))
+	if (!(Get-Command winget -errorAction SilentlyContinue))
 	{
 		# get latest download url
 		$URL = "https://api.github.com/repos/microsoft/winget-cli/releases/latest"
-		$URL = (iwr $URL -UseBasicParsing).Content | ConvertFrom-Json |
-				select -ExpandProperty "assets" |
-				where "browser_download_url" -Match '.msixbundle' |
-				select -ExpandProperty "browser_download_url"
+		$URL = (Invoke-WebRequest $URL -UseBasicParsing).Content | ConvertFrom-Json |
+				Select-Object -ExpandProperty "assets" |
+				Where-Object "browser_download_url" -Match '.msixbundle' |
+				Select-Object -ExpandProperty "browser_download_url"
 
 		# download
-		iwr $URL -OutFile "Setup.msix" -UseBasicParsing
+		Invoke-WebRequest $URL -OutFile "Setup.msix" -UseBasicParsing
 
 		# install
 		Add-AppxPackage -Path "Setup.msix"
 
 		# delete file
-		erase "Setup.msix"
+		Remove-Item "Setup.msix"
 	}
 
 
@@ -75,19 +75,19 @@ Process
 	{
 		winget install --id Microsoft.PowerShell -e --source winget --accept-source-agreements --accept-package-agreements
 		$PSScriptRoot\scripts\Update-Environment.ps1
-		saps -Verb RunAs pwsh -File $MyInvocation.MyCommand.Definition
+		Start-Process -Verb RunAs pwsh -File $MyInvocation.MyCommand.Definition
 		exit
 	}
 
 
 	# Remove sticky keys, toggle keys, filter keys
-	sp -Path "HKCU:\Control Panel\Accessibility\StickyKeys" -Name "Flags" -Value "506" -Force
-	sp -Path "HKCU:\Control Panel\Accessibility\ToggleKeys" -Name "Flags" -Value "58" -Force
-	sp -Path "HKCU:\Control Panel\Accessibility\Keyboard Response" -Name "Flags" -Value "122" -Force
+	Set-ItemProperty -Path "HKCU:\Control Panel\Accessibility\StickyKeys" -Name "Flags" -Value "506" -Force
+	Set-ItemProperty -Path "HKCU:\Control Panel\Accessibility\ToggleKeys" -Name "Flags" -Value "58" -Force
+	Set-ItemProperty -Path "HKCU:\Control Panel\Accessibility\Keyboard Response" -Name "Flags" -Value "122" -Force
 
 	# Set Keyboard delay to low, and keyboard speed to high
-	sp 'HKCU:\Control Panel\Keyboard' -Name 'KeyboardDelay' -Value '0' -Force
-	sp 'HKCU:\Control Panel\Keyboard' -Name 'KeyboardSpeed' -Value '31' -Force
+	Set-ItemProperty 'HKCU:\Control Panel\Keyboard' -Name 'KeyboardDelay' -Value '0' -Force
+	Set-ItemProperty 'HKCU:\Control Panel\Keyboard' -Name 'KeyboardSpeed' -Value '31' -Force
 
 
 	# Install GIT
@@ -97,29 +97,29 @@ Process
 
 	# DOCS ARE NOT SAYING GCC is need SO WE, have to add it SNOOOOOOORE.
 	# Install chocolatey because it is a pain to handle mingw, make and other stuff on winget atm
-	if (!(gcm choco -errorAction SilentlyContinue))
+	if (!(Get-Command choco -errorAction SilentlyContinue))
 	{
 		[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-		iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+		Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
 		$PSScriptRoot\scripts\Update-Environment.ps1
 	}
 
 	# DOCS ARE NOT SAYING GCC is need SO WE, have to add it SNOOOOOOORE.
-	if (!(gcm gcc -errorAction SilentlyContinue))
+	if (!(Get-Command gcc -errorAction SilentlyContinue))
 	{
 		choco install mingw
 		$PSScriptRoot\scripts\Update-Environment.ps1
 	}
 
 	# Good to have clang, but Lunarvim need it as well
-	if (!(gcm clang -errorAction SilentlyContinue))
+	if (!(Get-Command clang -errorAction SilentlyContinue))
 	{
 		choco install llvm
 		$PSScriptRoot\scripts\Update-Environment.ps1
 	}
 
 	# Specified just download
-	if (!(gcm make -errorAction SilentlyContinue))
+	if (!(Get-Command make -errorAction SilentlyContinue))
 	{
 		choco install make
 		$PSScriptRoot\scripts\Update-Environment.ps1
@@ -138,7 +138,7 @@ Process
 
 	# Install latest and "greatest" stable python
 	#winstall Python.Python
-	if (python --version 2>&1 | sls -Pattern "Python was not found")
+	if (python --version 2>&1 | Select-String -Pattern "Python was not found")
 	{
 		forcewinstall Python.Python.3.9
 	}
@@ -178,7 +178,7 @@ Process
 	winstall Rustlang.Rustup
 
 	# NVM node.js + npm version manager
-	$noNVM = (winget list --id CoreyButler.NVMforWindows -e --source winget | sls -Pattern "No installed package found")
+	$noNVM = (winget list --id CoreyButler.NVMforWindows -e --source winget | Select-String -Pattern "No installed package found")
 	winstall CoreyButler.NVMforWindows
 	if ($noNVM)
 	{
@@ -195,17 +195,17 @@ Process
 
 
 	# Install Lunarvim config
-	if (!(gcm lvim -errorAction SilentlyContinue))
+	if (!(Get-Command lvim -errorAction SilentlyContinue))
 	{
-		pwsh -c "`$LV_BRANCH='release-1.3/neovim-0.9'; iwr https://raw.githubusercontent.com/LunarVim/LunarVim/release-1.3/neovim-0.9/utils/installer/install.ps1 -UseBasicParsing | iex"
+		pwsh -c "`$LV_BRANCH='release-1.3/neovim-0.9'; Invoke-WebRequest https://raw.githubusercontent.com/LunarVim/LunarVim/release-1.3/neovim-0.9/utils/installer/install.ps1 -UseBasicParsing | Invoke-Expression"
 		
-		iwr "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.0.1/JetBrainsMono.zip" -OutFile "jetbrains.zip"
-		iwr "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.0.1/Hack.zip" -OutFile "hack.zip"
+		Invoke-WebRequest "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.0.1/JetBrainsMono.zip" -OutFile "jetbrains.zip"
+		Invoke-WebRequest "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.0.1/Hack.zip" -OutFile "hack.zip"
 		
 		Expand-Archive "jetbrains.zip" $PSScriptRoot\patched-fonts\JetBrainsMono
 		Expand-Archive "hack.zip" $PSScriptRoot\patched-fonts\Hack
-		erase "jetbrains.zip"
-		erase "hack.zip"
+		Remove-Item "jetbrains.zip"
+		Remove-Item "hack.zip"
 		$PSScriptRoot\scripts\NFInstall.ps1 JetBrainsMono, Hack
 	}
 	# END OF LUNARVIM INSTALL
@@ -219,10 +219,10 @@ Process
 	# No real good way to see where steam is installed at the moment
 	if (!(Test-Path -Path "C:\Program Files (x86)\Steam\steamcmd.exe" -PathType Leaf))
 	{
-		iwr "https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip" -OutFile "steamcmd.zip"
+		Invoke-WebRequest "https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip" -OutFile "steamcmd.zip"
 		Expand-Archive "steamcmd.zip" "C:\Program Files (x86)\Steam"
 	#	setx /M path "%path%;C:\Program Files (x86)\SteamCMD\"
-		erase "steamcmd.zip"
+		Remove-Item "steamcmd.zip"
 	# Install steam games deemed necessary
 		$steamuser = Read-Host -Prompt "Please enter username to steam"
 		& 'C:\Program Files (x86)\Steam\steamcmd' +login $steamuser +runscript $PSScriptRoot\scripts\steamInstalls.txt
@@ -263,17 +263,17 @@ Process
 	winstall Jellyfin.JellyfinMediaPlayer
 	
 	# Install Windows Terminal
-	$noWT = (winget list --id Microsoft.WindowsTerminal -e --source winget | sls -Pattern "No installed package found")
+	$noWT = (winget list --id Microsoft.WindowsTerminal -e --source winget | Select-String -Pattern "No installed package found")
 	winstall Microsoft.WindowsTerminal
 	if ($noWT)
 	{
-		$wtPath = Join-Path (gci $env:LocalAppData\Packages -Directory -Filter "Microsoft.WindowsTerminal*")[0].FullName LocalState
-		cp $PSScriptRoot\wtConf\settings.json $wtPath
-		cp $PSScriptRoot\wtConf\state.json $wtPath
+		$wtPath = Join-Path (Get-ChildItem $env:LocalAppData\Packages -Directory -Filter "Microsoft.WindowsTerminal*")[0].FullName LocalState
+		Copy-Item $PSScriptRoot\wtConf\settings.json $wtPath
+		Copy-Item $PSScriptRoot\wtConf\state.json $wtPath
 	}
 
 	# Only download, no reliable way to know if installed already
-	iwr "https://www.microsoft.com/en-us/download/confirmation.aspx?id=102134" -OutFile "$PSScriptRoot\winKeyLayout\MSKLC.exe"
+	Invoke-WebRequest "https://www.microsoft.com/en-us/download/confirmation.aspx?id=102134" -OutFile "$PSScriptRoot\winKeyLayout\MSKLC.exe"
 
 	Read-Host -Prompt "Scripts Completed : Press any key to exit"
 }
