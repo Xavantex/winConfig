@@ -11,7 +11,7 @@ Inspired by config files and reinstallation.
 
 Begin
 {
-  echo "Setup stuff"
+  Write-Output "Setup stuff"
   if (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator"))
   {
       Read-Host -Prompt "Not running elevated, quitting"
@@ -51,7 +51,7 @@ Process
 {
   # DOCS ARE NOT SAYING GCC is need SO WE, have to add it SNOOOOOOORE.
 	# Install chocolatey because it is a pain to handle mingw, make and other stuff on winget atm
-  echo "Chocolately"
+  Write-Output "Chocolately"
 	if (!(Get-Command choco -errorAction SilentlyContinue))
 	{
 		[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
@@ -60,7 +60,7 @@ Process
 	}
     choco feature enable -n allowGlobalConfirmation
 
-  echo "Powershell 7"
+  Write-Output "Powershell 7"
 	# Check that Powershell is above version 5 and if not install.
 	# Should add check if pwrshell 7 already is installed, not just this environment.
 	#if ($PSVersionTable.PSVersion.Major -ge 7)
@@ -77,25 +77,34 @@ Process
 	}
 
   # Get credentials from bitwarden
-  echo "Bitwarden"
+  Write-Output "Bitwarden"
   if (!(Get-Command gcc -errorAction SilentlyContinue))
 	{
 		choco install bitwarden-cli
 		& $PSScriptRoot\scripts\Update-Environment.ps1
 	}
+
+  # Fetch GUID from secret file
+  Get-Content $PSScriptRoot\bitwardGUID.txt | Foreach-Object{
+    $var = $_.Split('=')
+    New-Variable -Name $var[0] -Value $var[1]
+  }
     
   $SESSION_ID=(bw login --raw)
 
-  $steamuser = (bw get username 0929d5d6-f7d7-4c2a-9c85-acd40137f23b --session $SESSION_ID)
-  $steampass = (bw get password 0929d5d6-f7d7-4c2a-9c85-acd40137f23b --session $SESSION_ID)
+  $steam=bw get item $steam --session $SESSION_ID | ConvertFrom-Json | Select-Object -ExpandProperty login
+  $github=bw get item $github --session $SESSION_ID | ConvertFrom-Json | Select-Object -ExpandProperty login
+
+  $steamuser=$steam.username
+  $steampass=$steam.password
 
   # Since github otherwise rate limit download, snore
-  $gituser = (bw get username bde31796-9a9d-4ff7-8876-ad3001711712 --session $SESSION_ID)
-  $gitpass = (bw get password bde31796-9a9d-4ff7-8876-ad3001711712 --session $SESSION_ID)
+  $gituser=$github.username
+  $gitpass=$github.password
 
   bw logout
 
-  echo "Winget"
+  Write-Output "Winget"
 	# Download winget if we do not have it
 	if (!(Get-Command winget -errorAction SilentlyContinue))
 	{
@@ -138,7 +147,7 @@ Process
 	}
 
 
-  echo "Set important configs"
+  Write-Output "Set important configs"
 	# Remove sticky keys, toggle keys, filter keys
 	Set-ItemProperty -Path "HKCU:\Control Panel\Accessibility\StickyKeys" -Name "Flags" -Value "506" -Force
 	Set-ItemProperty -Path "HKCU:\Control Panel\Accessibility\ToggleKeys" -Name "Flags" -Value "58" -Force
@@ -163,13 +172,13 @@ Process
   # TimeZone is botched when installing
   Set-TimeZone -Id "Central European Standard Time"
 
-  echo "GIT"
+  Write-Output "GIT"
 	# Install GIT
 	winstall Git.Git
 	# Won't recognize that git is installed otherwise
 	& $PSScriptRoot\scripts\Update-Environment.ps1
 
-  echo "MINGW"
+  Write-Output "MINGW"
 	# DOCS ARE NOT SAYING GCC is need SO WE, have to add it SNOOOOOOORE.
 	if (!(Get-Command gcc -errorAction SilentlyContinue))
 	{
@@ -177,7 +186,7 @@ Process
 		& $PSScriptRoot\scripts\Update-Environment.ps1
 	}
 
-  echo "CLANG"
+  Write-Output "CLANG"
 	# Good to have clang, but Lunarvim need it as well
 	if (!(Get-Command clang -errorAction SilentlyContinue))
 	{
@@ -185,7 +194,7 @@ Process
 		& $PSScriptRoot\scripts\Update-Environment.ps1
 	}
 
-  echo "MAKE"
+  Write-Output "MAKE"
 	# Specified just download
 	if (!(Get-Command make -errorAction SilentlyContinue))
 	{
@@ -193,20 +202,20 @@ Process
 		& $PSScriptRoot\scripts\Update-Environment.ps1
 	}
 
-  echo "7zip"
+  Write-Output "7zip"
 	# Install 7-zip
 	winstall 7zip.7zip
 
 
 	#Install LunarVim
 
-  echo "NEOVIM"
+  Write-Output "NEOVIM"
 	# Install Neovim first
 	# Neovim is 9.0 on winget
 	winstall Neovim.Neovim
 
 
-  echo "PYTHON"
+  Write-Output "PYTHON"
 	# Install latest and "greatest" stable python
 	#winstall Python.Python
 	#if (python --version 2>&1 | Select-String -Pattern "Python was not found")
@@ -245,12 +254,12 @@ Process
 
 
 
-  echo "RUST"
+  Write-Output "RUST"
 	# Install Rustup, recommended Rust installation
 	# Check what flags to use for most automation
 	winstall Rustlang.Rustup
 
-  echo "NVM"
+  Write-Output "NVM"
 	# NVM node.js + npm version manager
 	$noNVM = (winget list --id CoreyButler.NVMforWindows -e --source winget | Select-String -Pattern "No installed package found")
 	winstall CoreyButler.NVMforWindows
@@ -268,7 +277,7 @@ Process
 	}
 
 
-  echo "LUNARVIM"
+  Write-Output "LUNARVIM"
 	# Install Lunarvim config
 	if (!(Get-Command lvim -errorAction SilentlyContinue))
 	{
@@ -289,11 +298,11 @@ Process
 	# END OF LUNARVIM INSTALL
 	
 
-  echo "STEAM"
+  Write-Output "STEAM"
 	# Install steam
 	winstall Valve.Steam
 
-  echo "STEAM GAMES"
+  Write-Output "STEAM GAMES"
 	# Install SteamCMD to install games
 	# This expects steam is in C:
 	# No real good way to see where steam is installed at the moment
@@ -309,27 +318,27 @@ Process
 	
 	& 'C:\Program Files (x86)\Steam\steam.exe'
 	
-  echo "SMALLSTEP"
+  Write-Output "SMALLSTEP"
 	# Install step CLI for certificates
 	winstall Smallstep.step
 	
-  echo "DISCORD"
+  Write-Output "DISCORD"
 	# Install discord for friends
 	# Look at updating toward spacebarchat
 	winstall Discord.Discord
 	
-  echo "VLC"
+  Write-Output "VLC"
 	# <3 VLC for media
 	winstall VideoLAN.VLC
 	
-  echo "FIREFOX"
+  Write-Output "FIREFOX"
   $noFF = (winget list --id Mozilla.Firefox -e --source winget | Select-String -Pattern "No installed package found")
 	# Install firefox
 	winstall Mozilla.Firefox
 
     if ($noFF)
 	{
-    echo "Firefox link in registry is botched, so check if set or not."
+    Write-Output "Firefox link in registry is botched, so check if set or not."
     $browser=(Get-ChildItem -Path Registry::HKCR\).PSChildName | Where-Object -FilterScript{ $_ -like "FirefoxURL*"}
     Set-ItemProperty -Path 'HKCU:\SOFTWARE\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice' -Name ProgId -Value $browser
     Set-ItemProperty -Path 'HKCU:\SOFTWARE\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice' -Name ProgId -Value $browser
@@ -342,32 +351,32 @@ Process
     #Sleep 2
     #[System.Windows.Forms.SendKeys]::SendWait("{TAB}{TAB}{DOWN}{DOWN} {DOWN} {DOWN}{DOWN}{DOWN}{DOWN}{DOWN}{DOWN} {DOWN} {TAB} ")
 	
-  echo "THUNDERBIRD"
+  Write-Output "THUNDERBIRD"
 	# Install thunderbird
 	# There is betterbird, a supposedly patched thunderbird : Betterbird.Betterbird
 	winstall Mozilla.Thunderbird
 	
-  echo "SOUND BLASTER"
+  Write-Output "SOUND BLASTER"
 	# Install sound blaster
 	winstall CreativeTechnology.SoundBlasterCommand
 
-  echo "WOOTILITY"
+  Write-Output "WOOTILITY"
 	# Install wootility
 	ctwinstall wootility-lekker "https://api.wooting.io/public/wootility/download?os=win&branch=lekker"
 	
-  echo "DELL"
+  Write-Output "DELL"
 	# Dell display manager for my displays
 	winstall Dell.DisplayManager
 	
-  echo "ICUE"
+  Write-Output "ICUE"
 	# Install latest iCUE, check if winstall have latest
 	ctwinstall iCUE "https://downloads.corsair.com/Files/icue/Install-iCUE.exe"
 	
-  echo "JELLYFIN"
+  Write-Output "JELLYFIN"
 	# Install jellyfin 
 	winstall Jellyfin.JellyfinMediaPlayer
 	
-  echo "Windows Terminal"
+  Write-Output "Windows Terminal"
 	# Install Windows Terminal
 	$noWT = (winget list --id Microsoft.WindowsTerminal -e --source winget | Select-String -Pattern "No installed package found")
 	winstall Microsoft.WindowsTerminal
@@ -378,12 +387,12 @@ Process
 		Copy-Item $PSScriptRoot\wtConf\state.json $wtPath
 	}
 
-  echo "MSKLC"
+  Write-Output "MSKLC"
 	# Only download, no reliable way to know if installed already
 	Invoke-WebRequest "https://www.microsoft.com/en-us/download/confirmation.aspx?id=102134" -OutFile "$PSScriptRoot\winKeyLayout\MSKLC.exe"
 
-  echo "FINISHED, update monitor settings manually, installers are located at: $PSScriptRoot, if you want to delete them."
-  echo "Can't autodelete since you need to first install everything"
+  Write-Output "FINISHED, update monitor settings manually, installers are located at: $PSScriptRoot, if you want to delete them."
+  Write-Output "Can't autodelete since you need to first install everything"
   choco feature disable -n allowGlobalConfirmation
 	Read-Host -Prompt "Scripts Completed Will Logoff: Press any key to exit"
   logoff
