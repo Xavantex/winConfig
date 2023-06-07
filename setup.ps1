@@ -119,7 +119,7 @@ Process
 				Where-Object "browser_download_url" -Match '.msixbundle' |
 				Select-Object -ExpandProperty "browser_download_url"
 
-    # Relies on VCL so download and install
+    # RELIES on VCL so download and install
     #Invoke-WebRequest -Uri "https://aka.ms/Microsoft.VCLibs.x64.14.00.Desktop.appx" -OutFile "SetupVCL.appx" -UseBasicParsing
     #powershell Add-AppxPackage -Path "SetupVCL.appx"
     #Remove-Item "SetupVCL.appx"
@@ -129,9 +129,9 @@ Process
 		Invoke-WebRequest -Uri $URL -OutFile "Setup.msix" -UseBasicParsing
 
 		# install
-        # Snore not fixed in powershell 7
+    # Snore not fixed in powershell 7
 		powershell Add-AppxPackage -Path "Setup.msix"
-        & $PSScriptRoot\scripts\Update-Environment.ps1
+    & $PSScriptRoot\scripts\Update-Environment.ps1
 
 		# delete file
 		Remove-Item "Setup.msix"
