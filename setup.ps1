@@ -283,6 +283,7 @@ Process
 		Remove-Item "hack.zip"
 		& $PSScriptRoot\scripts\NFInstall.ps1 JetBrainsMono, Hack
 
+    # This directory could perhaps not exist before :Lazy sync, if so and this fails add it as echo command
     pwsh -WorkingDirectory $env:USERPROFILE\AppData\Roaming\lunarvim\site\pack\lazy\opt\telescope-fzf-native.nvim -c make
 	}
 	# END OF LUNARVIM INSTALL
