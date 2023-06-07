@@ -1,4 +1,4 @@
-Run this to setup: ```Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force; setup.ps1```
+Run this to setup: ```Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force; .\setup.ps1```
 It changes policy, because windows is weird and makes it hard to execute scripts, it reverts after window is closed.
 
 Post install, most stuff is set up, you might need to click accept on some stuff, but mostly not.

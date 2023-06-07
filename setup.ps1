@@ -11,6 +11,13 @@ Inspired by config files and reinstallation.
 
 Begin
 {
+    echo "Setup stuff"
+    if (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator"))
+    {
+        Read-Host -Prompt "Not running elevated, quitting"
+        exit
+    }
+    $ErrorActionPreference = "Stop"
 
 	$win10 = (Get-ComputerInfo).OsName -match 10
 	
@@ -29,8 +36,7 @@ Begin
 		if (winget list $tool | Select-String -Pattern "No installed package found")
 		{
 			Invoke-WebRequest $dlURL -OutFile "$tool.exe"
-			.\$tool.exe
-			Remove-Item $tool.exe
+			& $PSScriptRoot\$tool.exe
 		}
 	}
 	
@@ -43,28 +49,18 @@ Begin
 
 Process
 {
-
-	# Download winget if we do not have it
-	if (!(Get-Command winget -errorAction SilentlyContinue))
+    # DOCS ARE NOT SAYING GCC is need SO WE, have to add it SNOOOOOOORE.
+	# Install chocolatey because it is a pain to handle mingw, make and other stuff on winget atm
+    echo "Chocolately"
+	if (!(Get-Command choco -errorAction SilentlyContinue))
 	{
-		# get latest download url
-		$URL = "https://api.github.com/repos/microsoft/winget-cli/releases/latest"
-		$URL = (Invoke-WebRequest $URL -UseBasicParsing).Content | ConvertFrom-Json |
-				Select-Object -ExpandProperty "assets" |
-				Where-Object "browser_download_url" -Match '.msixbundle' |
-				Select-Object -ExpandProperty "browser_download_url"
-
-		# download
-		Invoke-WebRequest $URL -OutFile "Setup.msix" -UseBasicParsing
-
-		# install
-		Add-AppxPackage -Path "Setup.msix"
-
-		# delete file
-		Remove-Item "Setup.msix"
+		[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+		Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+		& $PSScriptRoot\scripts\Update-Environment.ps1
 	}
+    choco feature enable -n allowGlobalConfirmation
 
-
+    echo "Powershell 7"
 	# Check that Powershell is above version 5 and if not install.
 	# Should add check if pwrshell 7 already is installed, not just this environment.
 	#if ($PSVersionTable.PSVersion.Major -ge 7)
@@ -73,75 +69,151 @@ Process
 	#}
 	if ($PSVersionTable.PSVersion -lt [Version]"7.0")
 	{
-		winget install --id Microsoft.PowerShell -e --source winget --accept-source-agreements --accept-package-agreements
-		$PSScriptRoot\scripts\Update-Environment.ps1
-		Start-Process -Verb RunAs pwsh -File $MyInvocation.MyCommand.Definition
+		#winget install --id Microsoft.PowerShell -e --source winget --accept-source-agreements --accept-package-agreements
+        choco install powershell-core
+		& $PSScriptRoot\scripts\Update-Environment.ps1
+		pwsh $PSCommandPath
 		exit
 	}
 
+    # Get credentials from bitwarden
+    echo "Bitwarden"
+    if (!(Get-Command gcc -errorAction SilentlyContinue))
+	{
+		choco install bitwarden-cli
+		& $PSScriptRoot\scripts\Update-Environment.ps1
+	}
+    
+    $SESSION_ID=(bw login --raw)
 
+    $steamuser = (bw get username 0929d5d6-f7d7-4c2a-9c85-acd40137f23b --session $SESSION_ID)
+    $steampass = (bw get password 0929d5d6-f7d7-4c2a-9c85-acd40137f23b --session $SESSION_ID)
+
+    # Since github otherwise rate limit download, snore
+    $gituser = (bw get username bde31796-9a9d-4ff7-8876-ad3001711712 --session $SESSION_ID)
+    $gitpass = (bw get password bde31796-9a9d-4ff7-8876-ad3001711712 --session $SESSION_ID)
+
+    bw logout
+
+    echo "Winget"
+	# Download winget if we do not have it
+	if (!(Get-Command winget -errorAction SilentlyContinue))
+	{
+        choco install microsoft-ui-xaml
+
+        $pair = "$($gituser):$($gitpass)"
+
+        $encodedCreds = [System.Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes($pair))
+
+        $basicAuthValue = "Basic $encodedCreds"
+
+        $Headers = @{
+            Authorization = $basicAuthValue
+        }
+
+
+		# get latest download url
+		$URL = "https://api.github.com/repos/microsoft/winget-cli/releases/latest"
+		$URL = (Invoke-WebRequest -Uri $URL -Headers $Headers -UseBasicParsing).Content | ConvertFrom-Json |
+				Select-Object -ExpandProperty "assets" |
+				Where-Object "browser_download_url" -Match '.msixbundle' |
+				Select-Object -ExpandProperty "browser_download_url"
+
+        # Relies on VCL so download and install
+        #Invoke-WebRequest -Uri "https://aka.ms/Microsoft.VCLibs.x64.14.00.Desktop.appx" -OutFile "SetupVCL.appx" -UseBasicParsing
+        #powershell Add-AppxPackage -Path "SetupVCL.appx"
+        #Remove-Item "SetupVCL.appx"
+        choco install microsoft-vclibs
+
+		# download
+		Invoke-WebRequest -Uri $URL -OutFile "Setup.msix" -UseBasicParsing
+
+		# install
+        # Snore not fixed in powershell 7
+		powershell Add-AppxPackage -Path "Setup.msix"
+        & $PSScriptRoot\scripts\Update-Environment.ps1
+
+		# delete file
+		Remove-Item "Setup.msix"
+	}
+
+
+    echo "Set important configs"
 	# Remove sticky keys, toggle keys, filter keys
 	Set-ItemProperty -Path "HKCU:\Control Panel\Accessibility\StickyKeys" -Name "Flags" -Value "506" -Force
 	Set-ItemProperty -Path "HKCU:\Control Panel\Accessibility\ToggleKeys" -Name "Flags" -Value "58" -Force
 	Set-ItemProperty -Path "HKCU:\Control Panel\Accessibility\Keyboard Response" -Name "Flags" -Value "122" -Force
 
 	# Set Keyboard delay to low, and keyboard speed to high
-	Set-ItemProperty 'HKCU:\Control Panel\Keyboard' -Name 'KeyboardDelay' -Value '0' -Force
-	Set-ItemProperty 'HKCU:\Control Panel\Keyboard' -Name 'KeyboardSpeed' -Value '31' -Force
+	Set-ItemProperty -Path 'HKCU:\Control Panel\Keyboard' -Name 'KeyboardDelay' -Value '0' -Force
+	Set-ItemProperty -Path 'HKCU:\Control Panel\Keyboard' -Name 'KeyboardSpeed' -Value '31' -Force
 
+    # Set Dark Mode
+    Set-ItemProperty 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name "AppsUseLightTheme" -Value "0" -Force
+    Set-ItemProperty 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name "SystemUseLightTheme" -Value "0" -Force
+    Set-ItemProperty 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name "EnableTransparency" -Value "0" -Force
+    Set-ItemProperty 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Wallpapers' -Name "BackgroundType" -Value "0" -Force
+    Set-ItemProperty 'HKCU:\Control Panel\Desktop' -Name "WallPaper" -Value "" -Force
+    Set-ItemProperty 'HKCU:\Control Panel\Colors' -Name "Background" -Value "0 0 0" -Force
 
+    # file extension stuff
+    Set-ItemProperty 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced' -Name "Hidden" -Value "1" -Force
+    Set-ItemProperty 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Advanced' -Name "HideFileExt" -Value "0" -Force
+
+    # TimeZone is botched when installing
+    Set-TimeZone -Id "Central European Standard Time"
+
+    echo "GIT"
 	# Install GIT
 	winstall Git.Git
 	# Won't recognize that git is installed otherwise
-	$PSScriptRoot\scripts\Update-Environment.ps1
+	& $PSScriptRoot\scripts\Update-Environment.ps1
 
-	# DOCS ARE NOT SAYING GCC is need SO WE, have to add it SNOOOOOOORE.
-	# Install chocolatey because it is a pain to handle mingw, make and other stuff on winget atm
-	if (!(Get-Command choco -errorAction SilentlyContinue))
-	{
-		[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-		Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-		$PSScriptRoot\scripts\Update-Environment.ps1
-	}
-
+    echo "MINGW"
 	# DOCS ARE NOT SAYING GCC is need SO WE, have to add it SNOOOOOOORE.
 	if (!(Get-Command gcc -errorAction SilentlyContinue))
 	{
 		choco install mingw
-		$PSScriptRoot\scripts\Update-Environment.ps1
+		& $PSScriptRoot\scripts\Update-Environment.ps1
 	}
 
+    echo "CLANG"
 	# Good to have clang, but Lunarvim need it as well
 	if (!(Get-Command clang -errorAction SilentlyContinue))
 	{
 		choco install llvm
-		$PSScriptRoot\scripts\Update-Environment.ps1
+		& $PSScriptRoot\scripts\Update-Environment.ps1
 	}
 
+    echo "MAKE"
 	# Specified just download
 	if (!(Get-Command make -errorAction SilentlyContinue))
 	{
 		choco install make
-		$PSScriptRoot\scripts\Update-Environment.ps1
+		& $PSScriptRoot\scripts\Update-Environment.ps1
 	}
 
+    echo "7zip"
 	# Install 7-zip
 	winstall 7zip.7zip
 
 
 	#Install LunarVim
 
+    echo "NEOVIM"
 	# Install Neovim first
 	# Neovim is 9.0 on winget
 	winstall Neovim.Neovim
 
 
+    echo "PYTHON"
 	# Install latest and "greatest" stable python
 	#winstall Python.Python
-	if (python --version 2>&1 | Select-String -Pattern "Python was not found")
-	{
-		forcewinstall Python.Python.3.9
-	}
+	#if (python --version 2>&1 | Select-String -Pattern "Python was not found")
+	#{
+	#	forcewinstall Python.Python.3.9
+	#}
+    choco install python --version=3.9.0
 
 
 	#!!!!!!!!!!!!!NOTE!!!!!!!!!!!!!!!
@@ -173,27 +245,30 @@ Process
 
 
 
+    echo "RUST"
 	# Install Rustup, recommended Rust installation
 	# Check what flags to use for most automation
 	winstall Rustlang.Rustup
 
+    echo "NVM"
 	# NVM node.js + npm version manager
 	$noNVM = (winget list --id CoreyButler.NVMforWindows -e --source winget | Select-String -Pattern "No installed package found")
 	winstall CoreyButler.NVMforWindows
 	if ($noNVM)
 	{
-		$PSScriptRoot\scripts\Update-Environment.ps1
+		& $PSScriptRoot\scripts\Update-Environment.ps1
 		# Install latest lts at 64 bit
 		nvm install lts 64
 		# Use latest lts at 64 bit
 		nvm use lts 64
 		
-		$PSScriptRoot\scripts\Update-Environment.ps1
+		& $PSScriptRoot\scripts\Update-Environment.ps1
 		# Because lunarvim install is broken without this
 		npm i tree-sitter-cli
 	}
 
 
+    echo "LUNARVIM"
 	# Install Lunarvim config
 	if (!(Get-Command lvim -errorAction SilentlyContinue))
 	{
@@ -206,14 +281,18 @@ Process
 		Expand-Archive "hack.zip" $PSScriptRoot\patched-fonts\Hack
 		Remove-Item "jetbrains.zip"
 		Remove-Item "hack.zip"
-		$PSScriptRoot\scripts\NFInstall.ps1 JetBrainsMono, Hack
+		& $PSScriptRoot\scripts\NFInstall.ps1 JetBrainsMono, Hack
+
+    pwsh -WorkingDirectory $env:USERPROFILE\AppData\Roaming\lunarvim\site\pack\lazy\opt\telescope-fzf-native.nvim -c make
 	}
 	# END OF LUNARVIM INSTALL
 	
 
+    echo "STEAM"
 	# Install steam
 	winstall Valve.Steam
 
+    echo "STEAM GAMES"
 	# Install SteamCMD to install games
 	# This expects steam is in C:
 	# No real good way to see where steam is installed at the moment
@@ -224,44 +303,70 @@ Process
 	#	setx /M path "%path%;C:\Program Files (x86)\SteamCMD\"
 		Remove-Item "steamcmd.zip"
 	# Install steam games deemed necessary
-		$steamuser = Read-Host -Prompt "Please enter username to steam"
-		& 'C:\Program Files (x86)\Steam\steamcmd' +login $steamuser +runscript $PSScriptRoot\scripts\steamInstalls.txt
+		& 'C:\Program Files (x86)\Steam\steamcmd' +login $steamuser $steampass +runscript $PSScriptRoot\scripts\steamInstalls.txt
 	}
 	
-	pwsh -c "& `'C:\Program Files (x86)\Steam\steam.exe`'"
+	& 'C:\Program Files (x86)\Steam\steam.exe'
 	
+    echo "SMALLSTEP"
 	# Install step CLI for certificates
 	winstall Smallstep.step
 	
+    echo "DISCORD"
 	# Install discord for friends
 	# Look at updating toward spacebarchat
 	winstall Discord.Discord
 	
+    echo "VLC"
 	# <3 VLC for media
 	winstall VideoLAN.VLC
 	
+    echo "FIREFOX"
+    $noFF = (winget list --id Mozilla.Firefox -e --source winget | Select-String -Pattern "No installed package found")
 	# Install firefox
 	winstall Mozilla.Firefox
+
+    if ($noFF)
+	{
+        echo "Firefox link in registry is botched, so check if set or not."
+        $browser=(Get-ChildItem -Path Registry::HKCR\).PSChildName | Where-Object -FilterScript{ $_ -like "FirefoxURL*"}
+        Set-ItemProperty -Path 'HKCU:\SOFTWARE\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice' -Name ProgId -Value $browser
+        Set-ItemProperty -Path 'HKCU:\SOFTWARE\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice' -Name ProgId -Value $browser
+    }
+    
+    # This is supposedly working in windows 10 if above do not work
+    #Add-Type -AssemblyName 'System.Windows.Forms'
+    #Start-Process $env:windir\system32\control.exe -LoadUserProfile -Wait `
+    #    -ArgumentList '/name Microsoft.DefaultPrograms /page pageDefaultProgram\pageAdvancedSettings?pszAppName=Firefox-308046B0AF4A39CB'
+    #Sleep 2
+    #[System.Windows.Forms.SendKeys]::SendWait("{TAB}{TAB}{DOWN}{DOWN} {DOWN} {DOWN}{DOWN}{DOWN}{DOWN}{DOWN}{DOWN} {DOWN} {TAB} ")
 	
+    echo "THUNDERBIRD"
 	# Install thunderbird
 	# There is betterbird, a supposedly patched thunderbird : Betterbird.Betterbird
 	winstall Mozilla.Thunderbird
 	
+    echo "SOUND BLASTER"
 	# Install sound blaster
 	winstall CreativeTechnology.SoundBlasterCommand
-	
+
+    echo "WOOTILITY"
 	# Install wootility
 	ctwinstall wootility-lekker "https://api.wooting.io/public/wootility/download?os=win&branch=lekker"
 	
+    echo "DELL"
 	# Dell display manager for my displays
 	winstall Dell.DisplayManager
 	
+    echo "ICUE"
 	# Install latest iCUE, check if winstall have latest
 	ctwinstall iCUE "https://downloads.corsair.com/Files/icue/Install-iCUE.exe"
 	
+    echo "JELLYFIN"
 	# Install jellyfin 
 	winstall Jellyfin.JellyfinMediaPlayer
 	
+    echo "Windows Terminal"
 	# Install Windows Terminal
 	$noWT = (winget list --id Microsoft.WindowsTerminal -e --source winget | Select-String -Pattern "No installed package found")
 	winstall Microsoft.WindowsTerminal
@@ -272,8 +377,13 @@ Process
 		Copy-Item $PSScriptRoot\wtConf\state.json $wtPath
 	}
 
+    echo "MSKLC"
 	# Only download, no reliable way to know if installed already
 	Invoke-WebRequest "https://www.microsoft.com/en-us/download/confirmation.aspx?id=102134" -OutFile "$PSScriptRoot\winKeyLayout\MSKLC.exe"
 
-	Read-Host -Prompt "Scripts Completed : Press any key to exit"
+    echo "FINISHED, update monitor settings manually, installers are located at: $PSScriptRoot, if you want to delete them."
+    echo "Can't autodelete since you need to first install everything"
+    choco feature disable -n allowGlobalConfirmation
+	Read-Host -Prompt "Scripts Completed Will Logoff: Press any key to exit"
+    logoff
 }
